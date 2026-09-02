@@ -29,6 +29,7 @@ PLAYWRIGHT_BROWSERS_PATH / PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD if set.)
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 import tempfile
 import time
@@ -625,12 +626,44 @@ def complete_declaration_and_submit(page: Page, *, auto_submit: bool = True) -> 
 
 
 # --------------------------------------------------------------------------
+# Random dummy-data helpers
+# --------------------------------------------------------------------------
+
+# A small pool of clearly-fake, generic Singapore-flavoured test names --
+# not tied to any real person -- so repeat UAT runs don't all submit under
+# the exact same "Script Test" identity.
+_RANDOM_GIVEN_NAMES = [
+    "Alex", "Bella", "Chen Wei", "Diya", "Ethan", "Farah", "Gavin", "Hana",
+    "Ivan", "Jia Wei", "Kavya", "Liam", "Mei Ling", "Noah", "Priya",
+    "Qi Rui", "Ryan", "Sofia", "Tariq", "Wen Jie",
+]
+_RANDOM_SURNAMES = [
+    "Tan", "Lim", "Lee", "Wong", "Ng", "Ong", "Goh", "Chua", "Koh", "Teo",
+    "Kumar", "Rahman", "Yeo", "Sim", "Chong",
+]
+
+
+def _random_name() -> tuple[str, str]:
+    """Returns (surname, given_name)."""
+    return random.choice(_RANDOM_SURNAMES), random.choice(_RANDOM_GIVEN_NAMES)
+
+
+def _random_policy_prefix() -> str:
+    """A random 3-digit prefix (e.g. "042") so repeat runs get distinct
+    policy numbers -- combine with --policy-suffix if you also want a
+    manually-chosen suffix on top."""
+    return f"{random.randint(0, 999):03d}"
+
+
+# --------------------------------------------------------------------------
 # Test case definitions
 # --------------------------------------------------------------------------
 
 
 def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool) -> None:
-    policy = f"MEDICAL250{policy_suffix}"
+    surname, given_name = _random_name()
+    policy = f"{_random_policy_prefix()}MEDICAL250{policy_suffix}"
+    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}")
     goto_and_start_claim(page)
     fill_basic_details(
         page,
@@ -638,12 +671,12 @@ def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_subm
         accident_date=("01", "01", "2026"),
         travel_from=("15", "01", "2026"),
         travel_to=("20", "01", "2026"),
-        contact_name="Script Test",
+        contact_name=f"{given_name} {surname}",
         mobile_number="91234567",
     )
     fill_insured_and_claimant(
         page,
-        surname="Test", given_name="Script", id_number="S1234567A",
+        surname=surname, given_name=given_name, id_number="S1234567A",
         nationality="Singapore", dob=("01", "01", "1990"), gender="Male",
         marital_status="Single", email="test@test.com",
         block_street_no="123", street_name="Test Street",
@@ -669,7 +702,9 @@ def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_subm
 
 
 def run_flight_delay_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool) -> None:
-    policy = f"AV222DELAY{policy_suffix}"
+    surname, given_name = _random_name()
+    policy = f"{_random_policy_prefix()}AV222DELAY{policy_suffix}"
+    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}")
     goto_and_start_claim(page)
     fill_basic_details(
         page,
@@ -677,12 +712,12 @@ def run_flight_delay_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto
         accident_date=("24", "02", "2026"),
         travel_from=("24", "02", "2026"),
         travel_to=("28", "02", "2026"),
-        contact_name="Script Test",
+        contact_name=f"{given_name} {surname}",
         mobile_number="91234567",
     )
     fill_insured_and_claimant(
         page,
-        surname="Test", given_name="Script", id_number="S1234567A",
+        surname=surname, given_name=given_name, id_number="S1234567A",
         nationality="Singapore", dob=("01", "01", "1990"), gender="Male",
         marital_status="Single", email="test@test.com",
         block_street_no="123", street_name="Test Street",
@@ -711,7 +746,9 @@ def run_flight_delay_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto
 
 
 def run_baggage_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool) -> None:
-    policy = f"BAGGAGE150{policy_suffix}"
+    surname, given_name = _random_name()
+    policy = f"{_random_policy_prefix()}BAGGAGE150{policy_suffix}"
+    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}")
     goto_and_start_claim(page)
     fill_basic_details(
         page,
@@ -719,12 +756,12 @@ def run_baggage_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_subm
         accident_date=("01", "01", "2026"),
         travel_from=("15", "01", "2026"),
         travel_to=("20", "01", "2026"),
-        contact_name="Script Test",
+        contact_name=f"{given_name} {surname}",
         mobile_number="91234567",
     )
     fill_insured_and_claimant(
         page,
-        surname="Test", given_name="Script", id_number="S1234567A",
+        surname=surname, given_name=given_name, id_number="S1234567A",
         nationality="Singapore", dob=("01", "01", "1990"), gender="Male",
         marital_status="Single", email="test@test.com",
         block_street_no="123", street_name="Test Street",

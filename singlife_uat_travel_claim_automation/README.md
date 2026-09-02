@@ -64,8 +64,13 @@ Useful flags:
   "Confirm" click on the final "Proceed to Submit?" dialog, so you can
   eyeball everything first. Combine with `--headed` to leave the browser
   open for inspection (press Enter in the terminal to close it).
-- `--policy-suffix SOMETHING` — appended to the dummy policy number, so
-  repeat runs are distinguishable in the UAT system.
+- `--policy-suffix SOMETHING` — appended to the dummy policy number, on
+  top of the random 3-digit prefix every run already gets (e.g.
+  `042MEDICAL250`) so repeat runs are distinguishable in the UAT system.
+  The insured's surname/given name are also picked randomly from a small
+  pool of generic test names on every run, for the same reason. Both the
+  policy number and name used are printed to the console at the start of
+  each case, so you can look the submission up afterward.
 - `--pdf-dir ./docs` — write the generated dummy upload PDFs somewhere
   persistent instead of a temp directory (they're tiny, hand-built,
   valid-but-empty PDFs — the portal only checks that *a* file was

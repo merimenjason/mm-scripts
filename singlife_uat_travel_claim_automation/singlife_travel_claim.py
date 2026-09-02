@@ -465,6 +465,37 @@ class PropertyItem:
     compensation_amount: Optional[str] = None
 
 
+def add_property_item(page: Page, next_item_index: int, attempts: int = 3) -> None:
+    """Click "+ Add Item" on the Loss/Damage of Property block, verifying a
+    new item's fields actually appear before moving on.
+
+    The button itself matches get_by_role(..., name="Add Item") fine (its
+    visible text is "+ Add Item", which contains that substring). The
+    problem is timing: this click happens immediately after filling the
+    previous item's Yes/No radios, and it can race the same kind of React
+    re-render that click_radio_by_id/check_category exist to guard
+    against -- the click can land without a new item block appearing,
+    which then hangs indefinitely once the caller tries to fill the next
+    item's (nonexistent) fields. Verify by waiting for the new item's
+    description field, and retry the click if it doesn't show up.
+    """
+    add_item_button = page.get_by_role("button", name="Add Item")
+    next_field = by_id(
+        page,
+        f"ClpDashboardSchema_property_damage.property_damage.{next_item_index}.item_description",
+    )
+    for attempt in range(attempts):
+        add_item_button.click()
+        try:
+            next_field.wait_for(state="visible", timeout=5000)
+            return
+        except PWTimeoutError:
+            continue
+    raise RuntimeError(
+        f'Clicking "+ Add Item" did not add item #{next_item_index + 1} after {attempts} attempts'
+    )
+
+
 def fill_property_damage(page: Page, items: list[PropertyItem],
                           claim_type_labels: list[str] = None) -> None:
     check_category(page, "property_damage")
@@ -473,10 +504,9 @@ def fill_property_damage(page: Page, items: list[PropertyItem],
         claim_type_labels or ["Loss or Damage of Baggage"],
     )
 
-    add_item_button = page.get_by_role("button", name="Add Item")
     for idx, item in enumerate(items):
         if idx > 0:
-            add_item_button.click()
+            add_property_item(page, idx)
 
         prefix = f"property_damage.property_damage.{idx}"
         fill_text(page, f"ClpDashboardSchema_{prefix}.item_description", item.description)

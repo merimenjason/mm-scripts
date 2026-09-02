@@ -469,25 +469,41 @@ def add_property_item(page: Page, next_item_index: int, attempts: int = 3) -> No
     """Click "+ Add Item" on the Loss/Damage of Property block, verifying a
     new item's fields actually appear before moving on.
 
-    The button itself matches get_by_role(..., name="Add Item") fine (its
-    visible text is "+ Add Item", which contains that substring). The
-    problem is timing: this click happens immediately after filling the
-    previous item's Yes/No radios, and it can race the same kind of React
-    re-render that click_radio_by_id/check_category exist to guard
-    against -- the click can land without a new item block appearing,
-    which then hangs indefinitely once the caller tries to fill the next
-    item's (nonexistent) fields. Verify by waiting for the new item's
-    description field, and retry the click if it doesn't show up.
+    Confirmed live (screenshot): "+ Add Item" renders as plain red text,
+    not a bordered control like the "Next"/"Previous" buttons elsewhere on
+    the same page -- unlike those, it may not carry an explicit ARIA
+    role="button" at all (e.g. a styled text link), which would make
+    get_by_role("button", name="Add Item") hang for the full default
+    timeout on every attempt regardless of retries -- exactly what was
+    observed twice in a row. So this tries a role="button" locator first
+    (in case it IS a real button) and falls back to a plain text locator
+    (works no matter what element type it actually is), each with its own
+    short timeout so a bad guess fails fast instead of burning the whole
+    click on one wrong locator. Either way, success is verified by waiting
+    for the new item's description field to actually appear, with the
+    whole click+verify cycle retried in case of a React re-render race
+    (the same rationale as click_radio_by_id/check_category).
     """
-    add_item_button = page.get_by_role("button", name="Add Item")
+    role_locator = page.get_by_role("button", name="Add Item")
+    text_locator = page.get_by_text("Add Item", exact=False).first
     next_field = by_id(
         page,
         f"ClpDashboardSchema_property_damage.property_damage.{next_item_index}.item_description",
     )
     for attempt in range(attempts):
-        add_item_button.click()
+        page.wait_for_timeout(300)
+        clicked = False
+        for candidate in (text_locator, role_locator):
+            try:
+                candidate.click(timeout=4000)
+                clicked = True
+                break
+            except PWTimeoutError:
+                continue
+        if not clicked:
+            continue
         try:
-            next_field.wait_for(state="visible", timeout=5000)
+            next_field.wait_for(state="visible", timeout=4000)
             return
         except PWTimeoutError:
             continue

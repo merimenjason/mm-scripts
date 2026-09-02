@@ -159,6 +159,30 @@ def fill_date_field(page: Page, real_field_id: str, day: str, month: str, year: 
             page.keyboard.press(meridiem[0].lower())
 
 
+def click_visible_button(page: Page, name: str, exact: bool = True) -> None:
+    """Click the currently-VISIBLE button matching `name`.
+
+    Confirmed live: this wizard keeps more than one step's form mounted in
+    the DOM at once (e.g. a "Next" button belonging to a later step was
+    already present while Basic Details was the visible step), so plain
+    `page.get_by_role("button", name=...).click()` can hit a Playwright
+    strict-mode violation (multiple matches) — and picking `.first`/`.last`
+    is a guess about DOM order, not a guarantee of which one is on-screen.
+    This walks all matches and clicks the one that's actually visible.
+    """
+    locator = page.get_by_role("button", name=name, exact=exact)
+    count = locator.count()
+    for i in range(count):
+        candidate = locator.nth(i)
+        if candidate.is_visible():
+            candidate.click()
+            return
+    # Fall back to Playwright's own wait/click if none looked visible yet
+    # (e.g. it's still animating in) -- last one is the most likely match
+    # based on every case observed while building this script.
+    locator.last.click()
+
+
 def select_autocomplete(page: Page, field_id: str, type_text: str, option_text: Optional[str] = None) -> None:
     """Fill an MUI Autocomplete combobox: click, type to filter, click the
     matching option from the popup listbox."""
@@ -214,10 +238,14 @@ def goto_and_start_claim(page: Page) -> None:
     # "Select Service" -> Make a new claim
     by_id(page, "ClpDashboardSchema_clm_service_opt_NC").click()
 
-    # "Select Claim Type" -> Travel Claim (MUI Autocomplete)
-    select_autocomplete(page, "ClpDashboardSchema_clm_type", "Travel", "Travel Claim")
+    # "Select Claim Type" -> Travel (MUI Autocomplete). Confirmed live: the
+    # dropdown option's actual text is exactly "Travel", not "Travel Claim"
+    # (the wizard/page title says "Travel Claim", but that's not the option
+    # label) -- searching for "Travel Claim" here would never match and
+    # hang until timeout, which is exactly what broke on the first page.
+    select_autocomplete(page, "ClpDashboardSchema_clm_type", "Travel", "Travel")
 
-    page.get_by_role("button", name="Next", exact=True).first.click()
+    click_visible_button(page, "Next")
 
     # One-time intro screen ("Here are some quick reminders before you
     # start") only appears on a fresh session — click through if present.
@@ -246,7 +274,7 @@ def fill_basic_details(page: Page, *, policy_no: str, accident_date: tuple[str, 
     phone.click()
     page.keyboard.type(mobile_number)
 
-    page.get_by_role("button", name="Next", exact=True).click()
+    click_visible_button(page, "Next")
 
 
 def fill_insured_and_claimant(page: Page, *, surname: str, given_name: str, id_number: str,
@@ -278,7 +306,7 @@ def fill_insured_and_claimant(page: Page, *, surname: str, given_name: str, id_n
 
     click_radio_index(page, "ClpDashboardSchema_claimant_type", 0)  # Same as Insured
 
-    page.get_by_role("button", name="Next", exact=True).click()
+    click_visible_button(page, "Next")
 
 
 def fill_claim_details_common(page: Page, *, place: str, country: str, description: str) -> None:
@@ -372,7 +400,7 @@ def fill_property_damage(page: Page, items: list[PropertyItem],
 
 
 def go_next_from_claim_details(page: Page) -> None:
-    page.get_by_role("button", name="Next", exact=True).last.click()
+    click_visible_button(page, "Next")
 
 
 def upload_supporting_documents(page: Page, dummy_pdf_paths: list[Path]) -> None:
@@ -397,7 +425,7 @@ def upload_supporting_documents(page: Page, dummy_pdf_paths: list[Path]) -> None
         # "Files uploaded" state before moving to the next slot.
         page.wait_for_timeout(400)
 
-    page.get_by_role("button", name="Next", exact=True).last.click()
+    click_visible_button(page, "Next")
 
 
 def complete_declaration_and_submit(page: Page, *, auto_submit: bool = True) -> None:
@@ -445,7 +473,7 @@ def complete_declaration_and_submit(page: Page, *, auto_submit: bool = True) -> 
         page.wait_for_timeout(300)
     agree_btn.click()
 
-    page.get_by_role("button", name="Next", exact=True).last.click()
+    click_visible_button(page, "Next")
 
     confirm_dialog_text = page.get_by_text("Proceed to Submit?")
     confirm_dialog_text.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)

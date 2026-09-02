@@ -29,11 +29,10 @@ PLAYWRIGHT_BROWSERS_PATH / PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD if set.)
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -167,45 +166,55 @@ def click_radio_index(page: Page, field_key: str, index: int) -> None:
     click_radio_by_id(page, f"{field_key}_opt_{index}")
 
 
-def fill_date_field(page: Page, real_field_id: str, day: str, month: str, year: str,
-                     index: int = 0, hour: Optional[str] = None, minute: Optional[str] = None,
-                     meridiem: Optional[str] = None) -> None:
-    """Fill an MUI X DatePicker / DateTimePicker field.
+def _spinbutton_container(page: Page, real_field_id: str):
+    """Locate the nearest ancestor of a hidden MUI-picker backing input
+    that contains role="spinbutton" descendants -- i.e. the group of
+    segmented inputs (Day/Month/Year or Hours/Minutes/Meridiem) that
+    actually belong to this one specific field.
+
+    IMPORTANT: pass the id of the specific real hidden input for the exact
+    field you mean. Confirmed live: a combined "date & time" form field
+    (e.g. "Scheduled Flight Departure Date & Time") is actually backed by
+    TWO SEPARATE hidden inputs -- one for the date part (id "...datetime")
+    and one for the time part (id "...datetime_time") -- each scoped to
+    its own narrow spinbutton group, not one shared group with all 6
+    segments. Likewise Travel Period's "From"/"To" are two distinct ids
+    ("...travel_period" / "...travel_period_to"). Passing the wrong one
+    (or trying to reach a "second" group in one field's own narrow scope
+    via an index) finds nothing there and hangs until timeout -- always
+    use the specific id for the exact sub-field you're filling.
+    """
+    hidden_input = by_id(page, real_field_id)
+    return hidden_input.locator('xpath=ancestor::*[.//*[@role="spinbutton"]][1]')
+
+
+def fill_date_field(page: Page, real_field_id: str, day: str, month: str, year: str) -> None:
+    """Fill an MUI X DatePicker field (Day/Month/Year only).
 
     The element bearing `real_field_id` is a hidden (aria-hidden) backing
     input — the actual interactive controls are role="spinbutton" children
-    (aria-label Day/Month/Year[/Hours/Minutes/Meridiem]) inside the nearest
-    ancestor container. Click the Day spinbutton directly (role-based, not
-    coordinate-based) and type digits — MUI auto-advances between segments.
-
-    IMPORTANT: pass the id of the specific real hidden input for the exact
-    field you mean (e.g. Travel Period's "From" and "To" are two distinct
-    ids: "...travel_period" and "...travel_period_to"). The ancestor lookup
-    walks up to the NEAREST container that has any spinbutton descendant,
-    which resolves to a group scoped to just that one field's own Day/
-    Month/Year(/Hours/Minutes/Meridiem) triplet — not a wider container
-    shared with a sibling field, even when two fields sit side by side
-    visually. Confirmed by trial: reusing one field's id with `index=1` to
-    reach a "second" triplet does NOT work — that ancestor only contains
-    the one triplet, so nth(1) finds nothing and hangs until timeout. Leave
-    `index` at its default (0) unless you've directly confirmed live that a
-    single container genuinely holds more than one same-labelled triplet.
+    (aria-label Day/Month/Year) inside the nearest ancestor container.
+    Click the Day spinbutton directly (role-based, not coordinate-based)
+    and type digits — MUI auto-advances between segments.
     """
-    hidden_input = by_id(page, real_field_id)
-    container = hidden_input.locator(
-        'xpath=ancestor::*[.//*[@role="spinbutton"]][1]'
-    )
-    day_spin = container.locator('[role="spinbutton"][aria-label="Day"]').nth(index)
+    container = _spinbutton_container(page, real_field_id)
+    day_spin = container.locator('[role="spinbutton"][aria-label="Day"]').first
     day_spin.click()
     page.keyboard.type(f"{day.zfill(2)}{month.zfill(2)}{year}")
-    if hour is not None and minute is not None:
-        # For combined date+time fields, the time inputs sit in the same
-        # container as a second, independent spinbutton group.
-        hour_spin = container.locator('[role="spinbutton"][aria-label="Hours"]').nth(index)
-        hour_spin.click()
-        page.keyboard.type(f"{hour.zfill(2)}{minute.zfill(2)}")
-        if meridiem:
-            page.keyboard.press(meridiem[0].lower())
+
+
+def fill_time_field(page: Page, real_field_id: str, hour: str, minute: str, meridiem: str) -> None:
+    """Fill an MUI X TimePicker field (Hours/Minutes/Meridiem only).
+
+    `real_field_id` must be the TIME-specific hidden input id (typically
+    the sibling "..._time" id next to a date field's own id, for a
+    combined "Date & Time" form field) -- see `_spinbutton_container`.
+    """
+    container = _spinbutton_container(page, real_field_id)
+    hour_spin = container.locator('[role="spinbutton"][aria-label="Hours"]').first
+    hour_spin.click()
+    page.keyboard.type(f"{hour.zfill(2)}{minute.zfill(2)}")
+    page.keyboard.press(meridiem[0].lower())
 
 
 def click_visible_button(page: Page, name: str, exact: bool = True) -> None:
@@ -266,7 +275,6 @@ def select_claim_type(page: Page, claim_type_field_id: str, labels: list[str]) -
     Property as earlier documentation assumed.
     """
     by_id(page, claim_type_field_id).click()
-    dialog = page.get_by_role("dialog") if page.get_by_role("dialog").count() else page
     for label in labels:
         page.get_by_text(label, exact=True).click()
     page.get_by_role("button", name="Close").click()
@@ -426,15 +434,22 @@ def fill_travel_inconvenience(page: Page, *, flight_number: str,
 
     fill_text(page, "ClpDashboardSchema_travel_inconvenience.flight_number", flight_number)
 
+    # Each "Date & Time" field is backed by TWO separate hidden inputs (a
+    # date one and a "..._time" one) with their own independently-scoped
+    # spinbutton groups -- see fill_date_field/fill_time_field docstrings.
     sd, sm, sy, sh, smin, sap = scheduled
     fill_date_field(
-        page, "ClpDashboardSchema_travel_inconvenience.scheduled_flight_arrival_datetime",
-        sd, sm, sy, hour=sh, minute=smin, meridiem=sap,
+        page, "ClpDashboardSchema_travel_inconvenience.scheduled_flight_arrival_datetime", sd, sm, sy,
+    )
+    fill_time_field(
+        page, "ClpDashboardSchema_travel_inconvenience.scheduled_flight_arrival_datetime_time", sh, smin, sap,
     )
     ad, am, ay, ah, amin, aap = actual
     fill_date_field(
-        page, "ClpDashboardSchema_travel_inconvenience.actual_flight_arrival_datetime",
-        ad, am, ay, hour=ah, minute=amin, meridiem=aap,
+        page, "ClpDashboardSchema_travel_inconvenience.actual_flight_arrival_datetime", ad, am, ay,
+    )
+    fill_time_field(
+        page, "ClpDashboardSchema_travel_inconvenience.actual_flight_arrival_datetime_time", ah, amin, aap,
     )
 
     fill_text(page, "ClpDashboardSchema_travel_inconvenience.cause", cause)
@@ -556,7 +571,7 @@ def complete_declaration_and_submit(page: Page, *, auto_submit: bool = True) -> 
         print("--no-submit set: stopping before Confirm. Dialog is open for manual review.")
         return
 
-    page.get_by_role("button", name="Confirm", exact=True).click()
+    click_visible_button(page, "Confirm")
 
     # Submission can take up to ~10s ("Submitting..." spinner).
     page.wait_for_selector("text=Thank you for your claim", timeout=30_000)

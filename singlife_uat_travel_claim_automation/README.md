@@ -13,8 +13,32 @@ approval for this UAT/dummy-data workflow. Do not repoint it at production.
 
 ## Setup
 
+Recommended: install into a virtual environment, since recent Ubuntu/Debian
+Python refuses global `pip install` with an "externally-managed-environment"
+error (PEP 668):
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+playwright install chromium
+```
+
+Every subsequent `python singlife_travel_claim.py ...` command needs that
+same venv active — run `source .venv/bin/activate` again in any new
+terminal before using the script.
+
+Alternatives if you'd rather not use a venv:
+
+```bash
+# Option A: pipx (installs into its own isolated environment)
+pipx install playwright
+pipx run playwright install chromium
+
+# Option B: force pip to install into the system environment anyway
+# (only do this if you understand the tradeoff — it can conflict with
+# packages your OS manages)
+pip install -r requirements.txt --break-system-packages
 playwright install chromium
 ```
 

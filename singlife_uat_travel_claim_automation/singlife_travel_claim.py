@@ -48,34 +48,50 @@ DEFAULT_TIMEOUT_MS = 15_000
 # Dummy PDF generation (self-contained — no external file dependencies)
 # --------------------------------------------------------------------------
 
-_MINIMAL_PDF_TEMPLATE = b"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
-endobj
-4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-5 0 obj
-<< /Length 70 >>
-stream
-BT /F1 12 Tf 20 100 Td (%(label)s - UAT dummy document) Tj ET
-endstream
-endobj
-xref
-0 6
-0000000000 65535 f
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-0
-%%%%EOF
-"""
+
+def _build_minimal_pdf_bytes(label: str) -> bytes:
+    """Build a minimal but genuinely valid single-page PDF from scratch,
+    with correctly-computed object byte offsets in its xref table.
+
+    (An earlier version of this used a fixed-offset template string with a
+    naive text substitution for the label -- that's fragile by
+    construction, since a label of different length shifts every byte
+    offset after it, and it also silently carried a dead line that tried
+    to '%'-format the whole template, which choked on the literal
+    "%PDF-1.4" header. This version computes each object's real offset as
+    it's written, and has been verified to parse cleanly with a strict PDF
+    reader (pypdf) rather than merely eyeballed.)
+    """
+    text = f"{label} - UAT dummy document".encode("ascii", "replace")
+    stream_content = b"BT /F1 12 Tf 20 100 Td (" + text + b") Tj ET"
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream_content)).encode() + b" >>\nstream\n"
+        + stream_content + b"\nendstream",
+    ]
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]  # object 0 is the free-list head, unused
+    for i, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
+
+    xref_offset = len(out)
+    object_count = len(objects) + 1
+    out += f"xref\n0 {object_count}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for off in offsets[1:]:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {object_count} /Root 1 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n"
+    ).encode()
+    return bytes(out)
 
 
 def make_dummy_pdf(directory: Path, label: str) -> Path:
@@ -87,10 +103,7 @@ def make_dummy_pdf(directory: Path, label: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     safe_label = "".join(c if c.isalnum() else "_" for c in label)[:40]
     path = directory / f"dummy_{safe_label}.pdf"
-    content = _MINIMAL_PDF_TEMPLATE % {b"%(label)s": label.encode("ascii", "replace")}
-    # The template above uses %-formatting awkwardly with bytes; do it simply instead.
-    content = _MINIMAL_PDF_TEMPLATE.replace(b"%(label)s", label.encode("ascii", "replace"))
-    path.write_bytes(content)
+    path.write_bytes(_build_minimal_pdf_bytes(label))
     return path
 
 

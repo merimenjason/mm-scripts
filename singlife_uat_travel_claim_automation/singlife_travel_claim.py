@@ -112,19 +112,46 @@ def fill_text(page: Page, element_id: str, value: str) -> None:
     loc.fill(value)
 
 
+def click_radio_by_id(page: Page, radio_id: str, attempts: int = 3) -> None:
+    """Click a radio option by its exact id and VERIFY it actually ends up
+    checked, retrying a few times if not.
+
+    Observed live: a plain `.click()` on a radio can be issued successfully
+    by Playwright (no exception) and still not end up checked — most likely
+    a React re-render triggered by an adjacent field (e.g. the Insured ID
+    Type autocomplete selected just beforehand) landing right as the click
+    is processed, resetting that bit of form state. Left unchecked, this
+    fails *silently* here and only surfaces much later as a confusing
+    "<field> is required" downstream, or as the wizard refusing to advance
+    with no obvious cause. Verify-and-retry converts that into either a
+    self-healed click or a clear, immediate error at the actual point of
+    failure.
+    """
+    radio = by_id(page, radio_id)
+    for attempt in range(attempts):
+        radio.click()
+        page.wait_for_timeout(200)
+        if radio.is_checked():
+            return
+    raise RuntimeError(
+        f"Radio {radio_id!r} did not register as checked after {attempts} click attempts "
+        "(the page likely re-rendered mid-click -- see click_radio_by_id docstring)"
+    )
+
+
 def click_radio(page: Page, field_key: str, yes: bool) -> None:
     """Click a Yes/No (or opt_1/opt_0) radio pair.
 
     Confirmed convention on this portal: opt_1 == Yes, opt_0 == No.
     """
     opt = "opt_1" if yes else "opt_0"
-    by_id(page, f"{field_key}_{opt}").click()
+    click_radio_by_id(page, f"{field_key}_{opt}")
 
 
 def click_radio_index(page: Page, field_key: str, index: int) -> None:
     """Click a radio option by its opt_<index> suffix (for non Yes/No radios
     such as insured_type opt_0=Individual / opt_1=Company)."""
-    by_id(page, f"{field_key}_opt_{index}").click()
+    click_radio_by_id(page, f"{field_key}_opt_{index}")
 
 
 def fill_date_field(page: Page, real_field_id: str, day: str, month: str, year: str,
@@ -201,6 +228,11 @@ def select_autocomplete(page: Page, field_id: str, type_text: str, option_text: 
     loc.fill("")
     page.keyboard.type(type_text)
     page.get_by_role("option", name=option_text, exact=False).first.click()
+    # Selecting a value here can mount/re-render fields elsewhere on the
+    # page (e.g. picking an Insured ID Type just before the "Are you a
+    # Singlife staff?" radio). Give that a moment to settle before the
+    # caller's next action, to avoid racing a click against a re-render.
+    page.wait_for_timeout(200)
 
 
 def select_dropdown_option(page: Page, field_id: str, option_text: str) -> None:
@@ -227,12 +259,24 @@ def select_claim_type(page: Page, claim_type_field_id: str, labels: list[str]) -
     page.get_by_role("button", name="Close").click()
 
 
-def check_category(page: Page, category_key: str) -> None:
-    """Check a Claim Category card checkbox.
+def check_category(page: Page, category_key: str, attempts: int = 3) -> None:
+    """Check a Claim Category card checkbox, verifying it registers.
 
     Confirmed id convention: ClpDashboardSchema_<category_key>.is_<category_key>
+
+    Same verify-and-retry rationale as click_radio_by_id -- checking this
+    box mounts a whole new block of category-specific fields below it, so
+    it's exactly the kind of click that can race a re-render.
     """
-    by_id(page, f"ClpDashboardSchema_{category_key}.is_{category_key}").check()
+    checkbox = by_id(page, f"ClpDashboardSchema_{category_key}.is_{category_key}")
+    for attempt in range(attempts):
+        checkbox.check()
+        page.wait_for_timeout(200)
+        if checkbox.is_checked():
+            return
+    raise RuntimeError(
+        f"Category checkbox {category_key!r} did not register as checked after {attempts} attempts"
+    )
 
 
 # --------------------------------------------------------------------------

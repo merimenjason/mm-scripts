@@ -138,9 +138,18 @@ def fill_date_field(page: Page, real_field_id: str, day: str, month: str, year: 
     ancestor container. Click the Day spinbutton directly (role-based, not
     coordinate-based) and type digits — MUI auto-advances between segments.
 
-    `index` disambiguates fields that hold TWO date triplets sharing the
-    same aria-labels in one container (e.g. Travel Period From/To): pass
-    index=0 for the first (From) and index=1 for the second (To).
+    IMPORTANT: pass the id of the specific real hidden input for the exact
+    field you mean (e.g. Travel Period's "From" and "To" are two distinct
+    ids: "...travel_period" and "...travel_period_to"). The ancestor lookup
+    walks up to the NEAREST container that has any spinbutton descendant,
+    which resolves to a group scoped to just that one field's own Day/
+    Month/Year(/Hours/Minutes/Meridiem) triplet — not a wider container
+    shared with a sibling field, even when two fields sit side by side
+    visually. Confirmed by trial: reusing one field's id with `index=1` to
+    reach a "second" triplet does NOT work — that ancestor only contains
+    the one triplet, so nth(1) finds nothing and hangs until timeout. Leave
+    `index` at its default (0) unless you've directly confirmed live that a
+    single container genuinely holds more than one same-labelled triplet.
     """
     hidden_input = by_id(page, real_field_id)
     container = hidden_input.locator(
@@ -265,8 +274,16 @@ def fill_basic_details(page: Page, *, policy_no: str, accident_date: tuple[str, 
     fill_text(page, "ClpDashboardSchema_basic_details.policy_no", policy_no)
 
     fill_date_field(page, "ClpDashboardSchema_basic_details.accident_date", *accident_date)
-    fill_date_field(page, "ClpDashboardSchema_basic_details.travel_period", *travel_from, index=0)
-    fill_date_field(page, "ClpDashboardSchema_basic_details.travel_period", *travel_to, index=1)
+    # NOTE: From and To are two SEPARATE real hidden inputs
+    # ("...travel_period" and "...travel_period_to") — each has its own
+    # narrowly-scoped ancestor container holding just its own 3
+    # spinbuttons, so each is filled with the default index=0. (An earlier
+    # version of this script incorrectly reused the "From" id for both
+    # calls with index=0/1, assuming they shared one container scoped
+    # exactly to both triplets — that ancestor search actually resolves to
+    # the narrower per-field group, so index=1 found nothing and hung.)
+    fill_date_field(page, "ClpDashboardSchema_basic_details.travel_period", *travel_from)
+    fill_date_field(page, "ClpDashboardSchema_basic_details.travel_period_to", *travel_to)
 
     fill_text(page, "ClpDashboardSchema_basic_details.name", contact_name)
 

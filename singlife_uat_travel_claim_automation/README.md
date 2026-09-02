@@ -67,10 +67,25 @@ Useful flags:
 - `--policy-suffix SOMETHING` — appended to the dummy policy number, on
   top of the random 3-digit prefix every run already gets (e.g.
   `042MEDICAL250`) so repeat runs are distinguishable in the UAT system.
-  The insured's surname/given name are also picked randomly from a small
-  pool of generic test names on every run, for the same reason. Both the
-  policy number and name used are printed to the console at the start of
-  each case, so you can look the submission up afterward.
+  The insured's surname/given name (and Contact Name, which matches them)
+  are also picked randomly from a small pool of generic test names on
+  every run, for the same reason. The policy number, insured name, and
+  claim amount(s) used are printed to the console at the start of each
+  case, so you can look the submission up afterward.
+- `--medical-amount 199.99` — override the medical claim's amount
+  (`--case medical` only; default `250.00`, which is the auto-approval
+  threshold — go above it if you specifically want to test the
+  above-threshold/manual-review path instead).
+- `--baggage-item-amount 50.00` — override the per-item claim amount for
+  *both* baggage items (`--case baggage` only; default `75.00` each,
+  `150.00` total, which is the max-limit test case).
+
+The `MEDICAL`/`BAGGAGE` policy-number label updates to match whatever
+amount is actually used (e.g. `--medical-amount 199.99` produces
+`...MEDICAL200...`, rounded to the nearest dollar since policy numbers
+are digits-only; `--baggage-item-amount 50.00` produces `...BAGGAGE100...`,
+i.e. the two-item total), so the label always reflects the real submitted
+amount rather than a fixed test-case name.
 - `--pdf-dir ./docs` — write the generated dummy upload PDFs somewhere
   persistent instead of a temp directory (they're tiny, hand-built,
   valid-but-empty PDFs — the portal only checks that *a* file was

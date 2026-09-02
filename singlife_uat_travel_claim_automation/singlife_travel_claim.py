@@ -655,15 +655,24 @@ def _random_policy_prefix() -> str:
     return f"{random.randint(0, 999):03d}"
 
 
+def _amount_label(amount: str) -> str:
+    """Round a "123.45"-style claim-amount string to a whole-number string
+    for use in a policy number label (e.g. "250", "150") -- policy numbers
+    are digits-only, so cents are dropped rather than embedding a "."."""
+    return str(round(float(amount)))
+
+
 # --------------------------------------------------------------------------
 # Test case definitions
 # --------------------------------------------------------------------------
 
 
-def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool) -> None:
+def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool,
+                      claim_amount: str = "250.00") -> None:
     surname, given_name = _random_name()
-    policy = f"{_random_policy_prefix()}MEDICAL250{policy_suffix}"
-    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}")
+    policy = f"{_random_policy_prefix()}MEDICAL{_amount_label(claim_amount)}{policy_suffix}"
+    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}  |  "
+          f"Claim amount: S${claim_amount}")
     goto_and_start_claim(page)
     fill_basic_details(
         page,
@@ -687,7 +696,7 @@ def run_medical_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_subm
         description="Fell ill with flu during travel and required medical consultation.",
     )
     fill_medical_related(
-        page, consultation_date=("01", "01", "2026"), claim_amount="250.00", injury_illness="Flu",
+        page, consultation_date=("01", "01", "2026"), claim_amount=claim_amount, injury_illness="Flu",
     )
     go_next_from_claim_details(page)
 
@@ -745,10 +754,13 @@ def run_flight_delay_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto
     complete_declaration_and_submit(page, auto_submit=auto_submit)
 
 
-def run_baggage_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool) -> None:
+def run_baggage_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_submit: bool,
+                      item_amount: str = "75.00") -> None:
     surname, given_name = _random_name()
-    policy = f"{_random_policy_prefix()}BAGGAGE150{policy_suffix}"
-    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}")
+    total_label = _amount_label(str(float(item_amount) * 2))
+    policy = f"{_random_policy_prefix()}BAGGAGE{total_label}{policy_suffix}"
+    print(f"Using policy number: {policy}  |  Insured: {given_name} {surname}  |  "
+          f"Item claim amount: S${item_amount} each")
     goto_and_start_claim(page)
     fill_basic_details(
         page,
@@ -774,11 +786,11 @@ def run_baggage_case(page: Page, pdf_dir: Path, *, policy_suffix: str, auto_subm
     items = [
         PropertyItem(
             description="Samsonite", purchase_date=("01", "01", "2025"), has_receipt=True,
-            claim_amount="75.00", reported_to_authorities=False,
+            claim_amount=item_amount, reported_to_authorities=False,
         ),
         PropertyItem(
             description="Gucci", purchase_date=("11", "01", "2025"), has_receipt=True,
-            claim_amount="75.00", reported_to_authorities=True,
+            claim_amount=item_amount, reported_to_authorities=True,
         ),
     ]
     fill_property_damage(page, items, claim_type_labels=["Loss or Damage of Baggage"])
@@ -815,6 +827,8 @@ def main() -> int:
     parser.add_argument("--no-submit", action="store_true", help="Fill the whole form but stop before clicking Confirm")
     parser.add_argument("--policy-suffix", default="", help="Suffix appended to the dummy policy number, e.g. to make repeat runs distinguishable")
     parser.add_argument("--pdf-dir", default=None, help="Directory to write dummy upload PDFs into (default: a temp dir)")
+    parser.add_argument("--medical-amount", default="250.00", help="Override the medical claim amount (--case medical only; default 250.00)")
+    parser.add_argument("--baggage-item-amount", default="75.00", help="Override the per-item claim amount for both baggage items (--case baggage only; default 75.00)")
     args = parser.parse_args()
 
     if "clientportaluat.merimen.com" not in BASE_URL:
@@ -829,7 +843,12 @@ def main() -> int:
         page.set_default_timeout(DEFAULT_TIMEOUT_MS)
         try:
             run_fn = CASES[args.case]
-            run_fn(page, pdf_dir, policy_suffix=args.policy_suffix, auto_submit=not args.no_submit)
+            run_kwargs = {"policy_suffix": args.policy_suffix, "auto_submit": not args.no_submit}
+            if args.case == "medical":
+                run_kwargs["claim_amount"] = args.medical_amount
+            elif args.case == "baggage":
+                run_kwargs["item_amount"] = args.baggage_item_amount
+            run_fn(page, pdf_dir, **run_kwargs)
         except Exception:
             screenshot_path = Path(tempfile.gettempdir()) / f"singlife_uat_failure_{int(time.time())}.png"
             try:
